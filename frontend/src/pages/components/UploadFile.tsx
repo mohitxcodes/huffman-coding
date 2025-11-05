@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, X, Loader2, CheckCircle2, FileUp, FileDown, Sparkles, Play } from 'lucide-react';
+import { Upload, FileText, X, Loader2, CheckCircle2, FileUp, Sparkles, Play } from 'lucide-react';
 
 interface FileState {
     file: File | null;
@@ -13,13 +13,6 @@ interface UploadFileProps {
     onFileProcessed: (result: any, fileName: string) => void;
 }
 
-interface FileState {
-    file: File | null;
-    isUploading: boolean;
-    isComplete: boolean;
-    error: string | null;
-}
-
 export default function UploadFile({ onFileProcessed }: UploadFileProps) {
     const [fileState, setFileState] = useState<FileState>({
         file: null,
@@ -29,6 +22,9 @@ export default function UploadFile({ onFileProcessed }: UploadFileProps) {
     });
     const [isDragging, setIsDragging] = useState(false);
 
+    // ===========================
+    // Drag & Drop Handlers
+    // ===========================
     const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault();
         e.stopPropagation();
@@ -45,22 +41,13 @@ export default function UploadFile({ onFileProcessed }: UploadFileProps) {
         e.preventDefault();
         e.stopPropagation();
         setIsDragging(false);
-
         const files = e.dataTransfer.files;
         if (files && files.length > 0) {
             const file = files[0];
             if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-                setFileState({
-                    file,
-                    isUploading: false,
-                    isComplete: false,
-                    error: null,
-                });
+                setFileState({ file, isUploading: false, isComplete: false, error: null });
             } else {
-                setFileState(prev => ({
-                    ...prev,
-                    error: 'Please upload a .txt file',
-                }));
+                setFileState(prev => ({ ...prev, error: 'Please upload a .txt file' }));
             }
         }
     }, []);
@@ -70,57 +57,99 @@ export default function UploadFile({ onFileProcessed }: UploadFileProps) {
         if (files && files.length > 0) {
             const file = files[0];
             if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-                setFileState({
-                    file,
-                    isUploading: false,
-                    isComplete: false,
-                    error: null,
-                });
+                setFileState({ file, isUploading: false, isComplete: false, error: null });
             } else {
-                setFileState(prev => ({
-                    ...prev,
-                    error: 'Please upload a .txt file',
-                }));
+                setFileState(prev => ({ ...prev, error: 'Please upload a .txt file' }));
             }
         }
     };
 
+    // ===========================
+    // Upload + Backend Integration
+    // ===========================
     const handleUpload = async () => {
         if (!fileState.file) return;
 
+        console.log('Starting upload with file:', fileState.file.name, 'size:', fileState.file.size);
         setFileState(prev => ({ ...prev, isUploading: true, error: null }));
 
+        const startTime = performance.now();
+
         try {
-            // Simulate file processing
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            const formData = new FormData();
+            formData.append('file', fileState.file);
 
-            // Create a mock result object
-            const result = {
-                originalSize: fileState.file.size,
-                compressedSize: Math.floor(fileState.file.size * 0.6), // 40% compression for demo
-                ratio: (fileState.file.size / (fileState.file.size * 0.6)).toFixed(1),
-                timeTaken: 1200, // ms
-            };
+            // Send request to backend
+            const response = await fetch('http://localhost:5001/compress', {
+                method: 'POST',
+                body: formData,
+                // Important: Don't set Content-Type header, let the browser set it with the boundary
+            });
 
-            // Call the parent handler with the result
-            onFileProcessed(result, fileState.file.name);
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Server error: ${response.status} - ${errorText}`);
+            }
 
-        } catch (error) {
+            // Get the compressed file as blob
+            const blob = await response.blob();
+            console.log('Server response - status:', response.status, 'compressed size:', blob.size);
+
+            // Calculate stats
+            const originalSize = fileState.file.size;
+            const compressedSize = blob.size;
+            const timeTaken = Math.round(performance.now() - startTime);
+            const ratio = (originalSize / compressedSize).toFixed(2);
+
+            // Create download URL for later use
+            const downloadUrl = window.URL.createObjectURL(blob);
+
+            console.log('Sending to parent:', {
+                originalSize,
+                compressedSize,
+                ratio,
+                timeTaken,
+                hasDownloadUrl: !!downloadUrl
+            });
+
+            // Auto-download the file
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = `${fileState.file.name}.hf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // Notify parent component with result
+            onFileProcessed(
+                {
+                    originalSize,
+                    compressedSize,
+                    ratio,
+                    timeTaken,
+                    downloadUrl
+                },
+                fileState.file.name
+            );
+
             setFileState(prev => ({
                 ...prev,
                 isUploading: false,
-                error: 'Upload failed. Please try again.',
+                isComplete: true,
+            }));
+
+        } catch (error) {
+            console.error('Compression error:', error);
+            setFileState(prev => ({
+                ...prev,
+                isUploading: false,
+                error: error instanceof Error ? error.message : 'Compression failed. Please try again.',
             }));
         }
     };
 
     const resetUpload = () => {
-        setFileState({
-            file: null,
-            isUploading: false,
-            isComplete: false,
-            error: null,
-        });
+        setFileState({ file: null, isUploading: false, isComplete: false, error: null });
     };
 
     const variants = {
@@ -131,12 +160,7 @@ export default function UploadFile({ onFileProcessed }: UploadFileProps) {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 py-12 px-4 sm:px-6 lg:px-8">
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="max-w-3xl mx-auto"
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="max-w-3xl mx-auto">
                 <motion.div
                     initial={{ scale: 0.95 }}
                     animate={{ scale: 1 }}
@@ -170,7 +194,6 @@ export default function UploadFile({ onFileProcessed }: UploadFileProps) {
                             onDragLeave={handleDragLeave}
                             onDrop={handleDrop}
                         >
-                            <div className="absolute -inset-1 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-300"></div>
                             <div className="relative z-10 flex flex-col items-center justify-center space-y-5">
                                 <motion.div
                                     animate={isDragging ? { y: [0, -5, 0] } : { y: 0 }}
@@ -179,44 +202,18 @@ export default function UploadFile({ onFileProcessed }: UploadFileProps) {
                                 >
                                     <FileUp className="w-8 h-8 text-blue-400" />
                                 </motion.div>
-
                                 <div className="space-y-2">
-                                    <p className="text-lg font-medium text-white">
-                                        {isDragging ? 'Drop to upload' : 'Drag & drop your file'}
-                                    </p>
-                                    <p className="text-sm text-gray-400">
-                                        or
-                                    </p>
+                                    <p className="text-lg font-medium text-white">{isDragging ? 'Drop to upload' : 'Drag & drop your file'}</p>
+                                    <p className="text-sm text-gray-400">or</p>
                                 </div>
-
                                 <label className="cursor-pointer group">
                                     <span className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-lg text-sm font-medium transition-all duration-300 flex items-center space-x-2 group-hover:shadow-lg group-hover:shadow-blue-500/20">
                                         <Upload className="w-4 h-4" />
                                         <span>Browse Files</span>
                                     </span>
-                                    <input
-                                        type="file"
-                                        className="hidden"
-                                        accept=".txt,text/plain"
-                                        onChange={handleFileChange}
-                                    />
+                                    <input type="file" className="hidden" accept=".txt,text/plain" onChange={handleFileChange} />
                                 </label>
-
-                                <p className="text-xs text-gray-500">
-                                    Supported format: .txt (Max 10MB)
-                                </p>
-
-                                <div className="flex items-center justify-center space-x-4 pt-4">
-                                    <div className="flex items-center text-xs text-gray-500">
-                                        <div className="w-2 h-2 bg-green-400 rounded-full mr-1.5"></div>
-                                        Secure Upload
-                                    </div>
-                                    <div className="h-4 w-px bg-gray-700"></div>
-                                    <div className="flex items-center text-xs text-gray-500">
-                                        <div className="w-2 h-2 bg-blue-400 rounded-full mr-1.5"></div>
-                                        Fast Processing
-                                    </div>
-                                </div>
+                                <p className="text-xs text-gray-500">Supported format: .txt (Max 10MB)</p>
                             </div>
                         </motion.div>
                     ) : (
@@ -228,7 +225,6 @@ export default function UploadFile({ onFileProcessed }: UploadFileProps) {
                             variants={variants}
                             className="relative bg-gray-800/70 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden border border-gray-700/50"
                         >
-                            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5"></div>
                             <div className="relative z-10 p-6">
                                 <div className="flex items-start justify-between">
                                     <div className="flex items-center space-x-4">
@@ -236,34 +232,20 @@ export default function UploadFile({ onFileProcessed }: UploadFileProps) {
                                             <FileText className="w-6 h-6 text-blue-400" />
                                         </div>
                                         <div>
-                                            <h3 className="font-medium text-white truncate max-w-xs">
-                                                {fileState.file.name}
-                                            </h3>
+                                            <h3 className="font-medium text-white truncate max-w-xs">{fileState.file.name}</h3>
                                             <div className="flex items-center mt-1 space-x-3">
-                                                <span className="text-sm text-gray-400">
-                                                    {(fileState.file.size / 1024).toFixed(2)} KB
-                                                </span>
-                                                <span className="text-xs px-2 py-0.5 bg-gray-700/50 text-gray-300 rounded-full">
-                                                    {fileState.file.type || 'text/plain'}
-                                                </span>
+                                                <span className="text-sm text-gray-400">{(fileState.file.size / 1024).toFixed(2)} KB</span>
+                                                <span className="text-xs px-2 py-0.5 bg-gray-700/50 text-gray-300 rounded-full">{fileState.file.type || 'text/plain'}</span>
                                             </div>
                                         </div>
                                     </div>
-                                    <button
-                                        onClick={resetUpload}
-                                        className="p-1.5 hover:bg-gray-700/50 rounded-lg transition-colors text-gray-400 hover:text-white"
-                                        aria-label="Remove file"
-                                    >
+                                    <button onClick={resetUpload} className="p-1.5 hover:bg-gray-700/50 rounded-lg transition-colors text-gray-400 hover:text-white" aria-label="Remove file">
                                         <X className="w-5 h-5" />
                                     </button>
                                 </div>
 
                                 {fileState.error && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: -10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className="mt-4 p-3 bg-red-900/30 border border-red-800/50 text-red-300 text-sm rounded-lg flex items-start space-x-2"
-                                    >
+                                    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mt-4 p-3 bg-red-900/30 border border-red-800/50 text-red-300 text-sm rounded-lg flex items-start space-x-2">
                                         <X className="w-4 h-4 mt-0.5 flex-shrink-0" />
                                         <span>{fileState.error}</span>
                                     </motion.div>
@@ -276,20 +258,11 @@ export default function UploadFile({ onFileProcessed }: UploadFileProps) {
                                         className="mt-4 p-3 bg-green-900/20 border border-green-800/50 text-green-300 text-sm rounded-lg flex items-center space-x-2"
                                     >
                                         <CheckCircle2 className="w-4 h-4 text-green-400" />
-                                        <span>File compressed successfully! Ready to download.</span>
+                                        <span>File compressed successfully! Download started automatically.</span>
                                     </motion.div>
                                 )}
 
                                 <div className="mt-6 flex flex-col sm:flex-row justify-between items-center space-y-3 sm:space-y-0">
-                                    <div className="flex items-center space-x-2 w-full sm:w-auto">
-                                        {!fileState.isComplete && !fileState.isUploading && (
-                                            <div className="flex items-center text-sm text-gray-400">
-                                                <div className="w-2 h-2 bg-blue-400 rounded-full mr-2 animate-pulse"></div>
-                                                Ready to compress
-                                            </div>
-                                        )}
-                                    </div>
-
                                     <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 w-full sm:w-auto">
                                         <button
                                             onClick={resetUpload}
@@ -303,8 +276,8 @@ export default function UploadFile({ onFileProcessed }: UploadFileProps) {
                                             onClick={handleUpload}
                                             disabled={!fileState.file || fileState.isUploading}
                                             className={`px-5 py-2 text-sm font-medium text-white rounded-lg transition-all duration-300 flex items-center justify-center space-x-2 ${fileState.isUploading
-                                                    ? 'bg-blue-600/70 cursor-not-allowed'
-                                                    : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 hover:shadow-lg hover:shadow-blue-500/20'
+                                                ? 'bg-blue-600/70 cursor-not-allowed'
+                                                : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 hover:shadow-lg hover:shadow-blue-500/20'
                                                 }`}
                                         >
                                             {fileState.isUploading ? (

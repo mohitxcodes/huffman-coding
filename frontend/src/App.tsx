@@ -1,11 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import UploadFile from './pages/components/UploadFile';
 import PreviewFile from './pages/components/PreviewFile';
 
+interface CompressionResult {
+  originalSize: number;
+  compressedSize: number;
+  ratio: string;
+  timeTaken: number;
+  downloadUrl?: string;
+}
+
 function App() {
-  const [compressionResult, setCompressionResult] = useState(null);
+  const [compressionResult, setCompressionResult] = useState<CompressionResult | null>(null);
   const [fileName, setFileName] = useState('');
+
+  const handleReset = () => {
+    console.log('Resetting compression result');
+    // Clean up the blob URL to free memory
+    if (compressionResult?.downloadUrl) {
+      console.log('Revoking download URL');
+      window.URL.revokeObjectURL(compressionResult.downloadUrl);
+    }
+    setCompressionResult(null);
+    setFileName('');
+  };
+
+  // Log when compression result changes
+  useEffect(() => {
+    console.log('Compression result updated:', compressionResult);
+  }, [compressionResult]);
 
   return (
     <Router>
@@ -29,15 +53,11 @@ function App() {
                 <PreviewFile
                   fileName={fileName}
                   result={compressionResult}
-                  onReset={() => window.location.href = '/'}
-                  onDownload={() => {
-                    // TODO: Implement download logic
-                    console.log('Downloading file...');
-                  }}
+                  onReset={handleReset}
                 />
               ) : (
                 <div className="flex items-center justify-center min-h-screen">
-                  <div className="text-center p-6 bg-gray-800/70 rounded-xl">
+                  <div className="text-center p-6 bg-gray-800/70 rounded-xl border border-gray-700/50">
                     <p className="text-gray-300 mb-4">No file to preview. Please upload a file first.</p>
                     <button
                       onClick={() => window.location.href = '/'}
@@ -57,10 +77,11 @@ function App() {
 }
 
 // Wrapper component to access navigate hook
-function UploadFileWrapper({ onFileProcessed }: { onFileProcessed: (result: any, name: string) => void }) {
+function UploadFileWrapper({ onFileProcessed }: { onFileProcessed: (result: CompressionResult, name: string) => void }) {
   const navigate = useNavigate();
 
-  const handleFileProcessed = (result: any, name: string) => {
+  const handleFileProcessed = (result: CompressionResult, name: string) => {
+    console.log('File processed - navigating to preview:', { name, result });
     onFileProcessed(result, name);
     navigate('/preview');
   };

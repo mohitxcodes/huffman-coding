@@ -1,10 +1,10 @@
 import { motion } from 'framer-motion';
-import { FileText, Download, Clock, FileDown, FileUp, BarChart2, CheckCircle2, X, RotateCcw } from 'lucide-react';
+import { FileText, Download, Clock, FileDown, FileUp, BarChart2, X, RotateCcw } from 'lucide-react';
 
 interface CompressionResult {
     originalSize: number;
     compressedSize: number;
-    ratio: number;
+    ratio: string;
     timeTaken: number;
     downloadUrl?: string;
 }
@@ -13,10 +13,10 @@ interface PreviewFileProps {
     fileName: string;
     result: CompressionResult;
     onReset: () => void;
-    onDownload: () => void;
 }
 
-export default function PreviewFile({ fileName, result, onReset, onDownload }: PreviewFileProps) {
+export default function PreviewFile({ fileName, result, onReset }: PreviewFileProps) {
+    console.log('PreviewFile rendering with:', { fileName, result });
     const formatBytes = (bytes: number, decimals = 2) => {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
@@ -28,6 +28,18 @@ export default function PreviewFile({ fileName, result, onReset, onDownload }: P
 
     const getSavingsPercentage = (original: number, compressed: number) => {
         return ((original - compressed) / original * 100).toFixed(2);
+    };
+
+    const handleDownload = () => {
+        console.log('Downloading file with URL:', result.downloadUrl);
+        if (result.downloadUrl) {
+            const a = document.createElement('a');
+            a.href = result.downloadUrl;
+            a.download = `${fileName}.hf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
     };
 
     return (
@@ -178,11 +190,11 @@ export default function PreviewFile({ fileName, result, onReset, onDownload }: P
                             </button>
 
                             <button
-                                onClick={onDownload}
+                                onClick={handleDownload}
                                 className="px-5 py-2.5 text-sm font-medium text-white rounded-lg transition-all duration-300 flex items-center justify-center space-x-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 hover:shadow-lg hover:shadow-green-500/20"
                             >
                                 <Download className="w-4 h-4" />
-                                <span>Download Compressed File</span>
+                                <span>Download Again</span>
                             </button>
                         </div>
                     </div>
@@ -196,7 +208,7 @@ export default function PreviewFile({ fileName, result, onReset, onDownload }: P
                     className="mt-6 text-center"
                 >
                     <p className="text-sm text-gray-500">
-                        Your file is processed securely and will be deleted from our servers after download
+                        Your file was processed securely. Download started automatically.
                     </p>
                 </motion.div>
             </motion.div>
